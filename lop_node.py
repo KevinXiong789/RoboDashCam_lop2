@@ -208,7 +208,8 @@ class Lop (rclpy.node.Node):
 		pinhole_camera_model.fromCameraInfo(msg=camera_info_message)
 
 		poses_3d = list()
-
+		
+		'''
 		for pose in poses:
 			pose_3d = Pose3D(confidence=pose.confidence)
 
@@ -253,10 +254,73 @@ class Lop (rclpy.node.Node):
 			f.writelines(str(pose_3d.points[keypoint_ID])+'\n')
 			f.close()
 			#*****************************
-		   
+		'''
 		
-		self.create_pose_markers(poses_3d)
+		for pose_idx, pose in enumerate(poses):
+			
+			pose_3d = Pose3D(confidence=pose.confidence)
 
+			for pixel_coordinates in pose.keypoints:
+
+				if any( (coordinate < 0) for coordinate in pixel_coordinates):  # No keypoint detected:
+					pose_3d.points.append(None)
+					continue
+
+				unit_vector_3d = pinhole_camera_model.projectPixelTo3dRay(uv=pixel_coordinates)
+				depth = (depth_image[tuple(pixel_coordinates[::-1] ) ] / 1000)  # Millimeter to meter.
+
+				point_3d = tuple( (element * depth) for element in unit_vector_3d)
+				pose_3d.points.append(point_3d)
+
+
+			poses_3d.append(pose_3d)
+			
+			#********InfluxDB**************
+		    # keypoint_ID, Neck=1, right hand=4, details Info see here https://cmu-perceptual-computing-lab.github.io/openpose/web/html/doc/md_doc_02_output.html
+			keypoint_ID = 1
+			point_name = f"Pose{pose_idx}_Neck_Openpose"
+			#keypoint_ID = 4
+			#point_name = "right_hand_Openpose"
+			if (pose_3d.points[keypoint_ID] is None) or (pose_3d.points[keypoint_ID][0]==0 and pose_3d.points[keypoint_ID][1]==0 and pose_3d.points[keypoint_ID][2]==0):
+				pass
+				
+			else:
+				# distance to zero
+				distance_to_zero = math.sqrt((pose_3d.points[keypoint_ID][0]**2)+(pose_3d.points[keypoint_ID][1]**2)+(pose_3d.points[keypoint_ID][2]**2))
+				timestamp = int(time.time()*1000)
+				data_point = Point(point_name) \
+							.field("x", pose_3d.points[keypoint_ID][0]) \
+							.field("y", pose_3d.points[keypoint_ID][1]) \
+							.field("d", pose_3d.points[keypoint_ID][2]) \
+							.field("distance", distance_to_zero) \
+							.time(timestamp,"ms")
+				influxdb_write_api.write(bucket="min_distance_test", record=data_point)
+				
+		   
+			#******************************
+
+			#********test.txt*************
+			f = open("test.txt","a+")
+			f.writelines(str(pose_3d.points[keypoint_ID])+'\n')
+			f.close()
+			#*****************************
+
+		if (pose_3d.points[keypoint_ID] is None) or (pose_3d.points[keypoint_ID][0]==0 and pose_3d.points[keypoint_ID][1]==0 and pose_3d.points[keypoint_ID][2]==0):
+			pass
+			
+		else:
+			num_people = int(pose_idx + 1)
+			timestamp = int(time.time()*1000)
+			number_point = Point("number of people") \
+						.field("number", int(num_people)) \
+						.time(timestamp,"ms")
+			influxdb_write_api.write(bucket="min_distance_test", record=number_point)
+			
+		
+
+
+		self.create_pose_markers(poses_3d)
+		
 
 	@staticmethod
 	def validate_point (point) -> float:
