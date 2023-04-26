@@ -279,6 +279,7 @@ class Lop (rclpy.node.Node):
 		    # keypoint_ID, Neck=1, right hand=4, details Info see here https://cmu-perceptual-computing-lab.github.io/openpose/web/html/doc/md_doc_02_output.html
 			keypoint_ID = 1
 			point_name = f"Pose{pose_idx}_Neck_Openpose"
+			people_ID = pose_idx + 1
 			#keypoint_ID = 4
 			#point_name = "right_hand_Openpose"
 			if (pose_3d.points[keypoint_ID] is None) or (pose_3d.points[keypoint_ID][0]==0 and pose_3d.points[keypoint_ID][1]==0 and pose_3d.points[keypoint_ID][2]==0):
@@ -293,29 +294,32 @@ class Lop (rclpy.node.Node):
 							.field("y", pose_3d.points[keypoint_ID][1]) \
 							.field("d", pose_3d.points[keypoint_ID][2]) \
 							.field("distance", distance_to_zero) \
+							.field("people_ID", people_ID) \
 							.time(timestamp,"ms")
-				influxdb_write_api.write(bucket="min_distance_test", record=data_point)
+				influxdb_write_api.write(bucket="OpenPose_test", record=data_point)
 				
 		   
 			#******************************
 
-			#********test.txt*************
-			f = open("test.txt","a+")
-			f.writelines(str(pose_3d.points[keypoint_ID])+'\n')
-			f.close()
-			#*****************************
-
+			
+		
+		# get wrong at number of people
 		if (pose_3d.points[keypoint_ID] is None) or (pose_3d.points[keypoint_ID][0]==0 and pose_3d.points[keypoint_ID][1]==0 and pose_3d.points[keypoint_ID][2]==0):
 			pass
 			
 		else:
-			num_people = int(pose_idx + 1)
+			#num_people = int(len(poses))
 			timestamp = int(time.time()*1000)
 			number_point = Point("number of people") \
-						.field("number", int(num_people)) \
+						.field("number", len(poses)) \
 						.time(timestamp,"ms")
-			influxdb_write_api.write(bucket="min_distance_test", record=number_point)
-			
+			influxdb_write_api.write(bucket="OpenPose_test", record=number_point)
+		
+		#********test.txt*************
+		f = open("test.txt","a+")
+		f.write(str(len(poses))+"\n")
+		f.close()
+		#*****************************
 		
 
 
@@ -426,7 +430,7 @@ class Lop (rclpy.node.Node):
 		# total_keypoints_num = sum(extract_keypoints(heatmaps[:, :, keypoint_idx], all_keypoints_by_type, total_keypoints_num)
 		#                           for keypoint_idx in range(self.number_of_keypoints) )  # 19th for bg
 
-		pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
+		pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs) # greedy algorithm
 
 
 		for keypoint_id in range(all_keypoints.shape[0] ):
