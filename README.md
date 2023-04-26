@@ -12,4 +12,4 @@ Here is just a changed code *lop_node.py* in RoboDashCam project.
 * `ros2 launch lop2 main.launch.py`
 ## Finished Task
 * Use OpenPose get xyz coordinate of keypoints and send them to InfluxDB, here in code use right hand and neck as example
-* In case you can not get a InfluxDB, these keypoints position can be recorded in a text.txt file, in this workspace
+* InfluxDB install: https://portal.influxdata.com/downloads/
