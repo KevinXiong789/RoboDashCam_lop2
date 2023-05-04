@@ -8,18 +8,20 @@ import cv2
 import torch
 import numpy as np
 
+# *****************************************************************
 # Before import run first: pip3 install influxdb-client
 # If Error with influxdb, try this: pip3 install --upgrade requests
 # InfluxDB library:
 from influxdb_client import InfluxDBClient, Point
 import time
-
+# *****************************************************************
 
 # ROS libraries:
 import rclpy
 import rclpy.node
 
 import std_msgs.msg
+from std_msgs.msg import Float32MultiArray
 import sensor_msgs.msg
 import visualization_msgs.msg
 import geometry_msgs.msg
@@ -68,11 +70,13 @@ MARKER_SIZE = geometry_msgs.msg.Vector3(x=0.1, y=0.1, z=0.1)
 MIN_KEYPOINT_DISTANCE_TO_CAMERA = 0.05
 USE_CPU = False
 
+# ******************************************************************************
 #set necessary info to connect InfluxDBClient
 influxdb_client = InfluxDBClient(url="http://localhost:8086", \
 								token="EZZyYWflA8jgJFT1J5TfTkTbgECQQzcIbEXvTDKwBVKntwRm4JyAEy3wzjzJE20i-i-8k9vFbIO1WDxsGNQSPw==", \
 								org="PointCloud")
 influxdb_write_api = influxdb_client.write_api()
+# ******************************************************************************
 
 class Pose3D ():
 
@@ -132,6 +136,11 @@ class Lop (rclpy.node.Node):
 														  msg_type=visualization_msgs.msg.MarkerArray,
 														  qos_profile=10)
 
+		# ************************************************************************************************
+		# Publisher for handposition
+		self.handposition_publisher = self.create_publisher(Float32MultiArray, '/Openpose/hand_position', 10)
+		# ************************************************************************************************
+
 
 		# Neural network setup:
 		self.net = PoseEstimationWithMobileNet()
@@ -148,7 +157,6 @@ class Lop (rclpy.node.Node):
 
 		self.stride = 8
 		self.upsample_ratio = 4
-		self.number_of_keypoints = Pose.number_of_keypoints
 		self.previous_poses = []
 		self.height_size = 256
 		self.track = True
@@ -208,56 +216,8 @@ class Lop (rclpy.node.Node):
 		pinhole_camera_model.fromCameraInfo(msg=camera_info_message)
 
 		poses_3d = list()
-		
-		'''
-		for pose in poses:
-			pose_3d = Pose3D(confidence=pose.confidence)
 
-			for pixel_coordinates in pose.keypoints:
-
-				if any( (coordinate < 0) for coordinate in pixel_coordinates):  # No keypoint detected:
-					pose_3d.points.append(None)
-					continue
-
-				unit_vector_3d = pinhole_camera_model.projectPixelTo3dRay(uv=pixel_coordinates)
-				depth = (depth_image[tuple(pixel_coordinates[::-1] ) ] / 1000)  # Millimeter to meter.
-
-				point_3d = tuple( (element * depth) for element in unit_vector_3d)
-				pose_3d.points.append(point_3d)
-
-
-			poses_3d.append(pose_3d)
-			
-			#********InfluxDB**************
-		    # keypoint_ID, Neck=1, right hand=4, details Info see here https://cmu-perceptual-computing-lab.github.io/openpose/web/html/doc/md_doc_02_output.html
-			keypoint_ID = 1
-			point_name = "Neck_Openpose"
-			#keypoint_ID = 4
-			#point_name = "right_hand_Openpose"
-			if (pose_3d.points[keypoint_ID] is None) or (pose_3d.points[keypoint_ID][0]==0 and pose_3d.points[keypoint_ID][1]==0 and pose_3d.points[keypoint_ID][2]==0):
-				pass
-				
-			else:
-				timestamp = int(time.time()*1000)
-				data_point = Point(point_name) \
-							.field("x", pose_3d.points[keypoint_ID][0]) \
-							.field("y", pose_3d.points[keypoint_ID][1]) \
-							.field("d", pose_3d.points[keypoint_ID][2]) \
-							.time(timestamp,"ms")
-				influxdb_write_api.write(bucket="min_distance_test", record=data_point)
-				
-		   
-			#******************************
-
-			#********test.txt*************
-			f = open("test.txt","a+")
-			f.writelines(str(pose_3d.points[keypoint_ID])+'\n')
-			f.close()
-			#*****************************
-		'''
-		
 		for pose_idx, pose in enumerate(poses):
-			
 			pose_3d = Pose3D(confidence=pose.confidence)
 
 			for pixel_coordinates in pose.keypoints:
@@ -272,21 +232,21 @@ class Lop (rclpy.node.Node):
 				point_3d = tuple( (element * depth) for element in unit_vector_3d)
 				pose_3d.points.append(point_3d)
 
-
 			poses_3d.append(pose_3d)
+
 			
-			#********InfluxDB**************
-		    # keypoint_ID, Neck=1, right hand=4, details Info see here https://cmu-perceptual-computing-lab.github.io/openpose/web/html/doc/md_doc_02_output.html
+			# ***********InfluxDB***************************
+			# keypoint_ID, Neck=1, right hand=4, details Info see here https://cmu-perceptual-computing-lab.github.io/openpose/web/html/doc/md_doc_02_output.html
 			keypoint_ID = 1
 			point_name = f"Pose{pose_idx}_Neck_Openpose"
 			people_ID = pose_idx + 1
 			#keypoint_ID = 4
 			#point_name = "right_hand_Openpose"
+			
 			if (pose_3d.points[keypoint_ID] is None) or (pose_3d.points[keypoint_ID][0]==0 and pose_3d.points[keypoint_ID][1]==0 and pose_3d.points[keypoint_ID][2]==0):
 				pass
 				
 			else:
-				# distance to zero
 				distance_to_zero = math.sqrt((pose_3d.points[keypoint_ID][0]**2)+(pose_3d.points[keypoint_ID][1]**2)+(pose_3d.points[keypoint_ID][2]**2))
 				timestamp = int(time.time()*1000)
 				data_point = Point(point_name) \
@@ -297,34 +257,27 @@ class Lop (rclpy.node.Node):
 							.field("people_ID", people_ID) \
 							.time(timestamp,"ms")
 				influxdb_write_api.write(bucket="OpenPose_test", record=data_point)
-				
-		   
-			#******************************
+			
+			# *******************************************
+			
+			# **********get right wrist and elbow position and publish***********************************
+			if (pose_3d.points[4] is not None) and (pose_3d.points[5] is not None):
+				msg = Float32MultiArray()
+				msg.data = [pose_3d.points[4][0], pose_3d.points[4][1], pose_3d.points[4][2], pose_3d.points[5][0], pose_3d.points[5][1], pose_3d.points[5][2]]
+				self.handposition_publisher.publish(msg)
+			'''
+			else:
+				msg = Float32MultiArray()
+				msg.data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+				self.handposition_publisher.publish(msg)
+			'''
+			# *******************************************************************************************
+			
 
-			
-		
-		# get wrong at number of people
-		if (pose_3d.points[keypoint_ID] is None) or (pose_3d.points[keypoint_ID][0]==0 and pose_3d.points[keypoint_ID][1]==0 and pose_3d.points[keypoint_ID][2]==0):
-			pass
-			
-		else:
-			#num_people = int(len(poses))
-			timestamp = int(time.time()*1000)
-			number_point = Point("number of people") \
-						.field("number", len(poses)) \
-						.time(timestamp,"ms")
-			influxdb_write_api.write(bucket="OpenPose_test", record=number_point)
-		
-		#********test.txt*************
-		f = open("test.txt","a+")
-		f.write(str(len(poses))+"\n")
-		f.close()
-		#*****************************
-		
 
 
 		self.create_pose_markers(poses_3d)
-		
+
 
 	@staticmethod
 	def validate_point (point) -> float:
@@ -416,41 +369,20 @@ class Lop (rclpy.node.Node):
 
 	def lop (self, image):
 
-		#original_image = image.copy()
 		heatmaps, pafs, scale, pad = self.infer_fast(self.net, image, self.height_size,
 													 self.stride, self.upsample_ratio, USE_CPU)
 
 		total_keypoints_num = 0
 		all_keypoints_by_type = []
-		for keypoint_idx in range(self.number_of_keypoints):  # 19th for bg
+		for keypoint_idx in range(Pose.number_of_keypoints):  # 19th for bg
 			total_keypoints_num += extract_keypoints(heatmaps[:, :, keypoint_idx], all_keypoints_by_type,
 													 total_keypoints_num)
 
-		# all_keypoints_by_type = list()
-		# total_keypoints_num = sum(extract_keypoints(heatmaps[:, :, keypoint_idx], all_keypoints_by_type, total_keypoints_num)
-		#                           for keypoint_idx in range(self.number_of_keypoints) )  # 19th for bg
-
-		pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs) # greedy algorithm
-
+		pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
 
 		for keypoint_id in range(all_keypoints.shape[0] ):
 			all_keypoints[keypoint_id, 0] = (all_keypoints[keypoint_id, 0] * self.stride / self.upsample_ratio - pad[1] ) / scale
 			all_keypoints[keypoint_id, 1] = (all_keypoints[keypoint_id, 1] * self.stride / self.upsample_ratio - pad[0] ) / scale
-
-		current_poses = []
-		for pose_index in range(len(pose_entries) ):
-
-			if len(pose_entries[pose_index] ) == 0:
-				continue
-
-			pose_keypoints = np.full(shape=(self.number_of_keypoints, 2), fill_value=-1, dtype=np.int32)
-
-			for keypoint_id in range(self.number_of_keypoints):
-				if pose_entries[pose_index][keypoint_id] != -1.0:  # keypoint was found
-					pose_keypoints[keypoint_id, 0] = int(all_keypoints[int(pose_entries[pose_index][keypoint_id] ), 0] )
-					pose_keypoints[keypoint_id, 1] = int(all_keypoints[int(pose_entries[pose_index][keypoint_id] ), 1] )
-
-			current_poses.append(Pose(keypoints=pose_keypoints, confidence=pose_entries[pose_index][18] ) )
 
 		current_poses = []
 		for pose_entry in pose_entries:
@@ -458,9 +390,9 @@ class Lop (rclpy.node.Node):
 			if len(pose_entry) == 0:
 				continue
 
-			pose_keypoints = np.full(shape=(self.number_of_keypoints, 2), fill_value=-1, dtype=np.int32)
+			pose_keypoints = np.full(shape=(Pose.number_of_keypoints, 2), fill_value=-1, dtype=np.int32)
 
-			for keypoint_id in range(self.number_of_keypoints):
+			for keypoint_id in range(Pose.number_of_keypoints):
 				if pose_entry[keypoint_id] != -1.0:  # keypoint was found
 					pose_keypoints[keypoint_id, 0] = int(all_keypoints[int(pose_entry[keypoint_id] ), 0] )
 					pose_keypoints[keypoint_id, 1] = int(all_keypoints[int(pose_entry[keypoint_id] ), 1] )
@@ -478,7 +410,7 @@ class Lop (rclpy.node.Node):
 
 def main (args=None):
 	rclpy.init(args=args)
-	print('hello world')
+
 	image_repeater = Lop()
 	rclpy.spin(image_repeater)
 	image_repeater.destroy_node()
